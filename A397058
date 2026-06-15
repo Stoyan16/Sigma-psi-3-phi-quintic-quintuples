@@ -1,0 +1,148 @@
+import math
+from multiprocessing import Pool, cpu_count
+
+
+# ---------- phi(x) ----------
+def compute_phi(n, factors):
+    res = n
+    for p in factors:
+        res -= res // p
+    return res
+
+
+# ---------- primes ----------
+def primes_up_to(n):
+    sieve = bytearray(b"\x01") * (n + 1)
+    sieve[0:2] = b"\x00\x00"
+
+    for i in range(2, int(n**0.5) + 1):
+        if sieve[i]:
+            sieve[i*i:n+1:i] = b"\x00" * ((n - i*i)//i + 1)
+
+    return [i for i in range(2, n + 1) if sieve[i]]
+
+
+# ---------- worker ----------
+def process_block(args):
+    L, R, primes = args
+    size = R - L
+
+    sigma = [1] * size
+    psi   = [1] * size
+    phi   = [0] * size
+    rem   = [L + i for i in range(size)]
+
+    factors = [set() for _ in range(size)]
+
+    # ---------- factorization ----------
+    for p in primes:
+        start = ((L + p - 1) // p) * p
+        if start >= R:
+            continue
+
+        for x in range(start, R, p):
+            i = x - L
+
+            if rem[i] % p == 0:
+                p_power = 1
+
+                while rem[i] % p == 0:
+                    rem[i] //= p
+                    p_power *= p
+
+                sigma[i] *= (p_power * p - 1) // (p - 1)
+                psi[i]   *= (p_power // p) * (p + 1)
+
+                factors[i].add(p)
+
+    for i in range(size):
+        if rem[i] > 1:
+            p = rem[i]
+            sigma[i] *= (p * p - 1) // (p - 1)
+            psi[i]   *= (p + 1)
+            factors[i].add(p)
+
+    for i in range(size):
+        phi[i] = compute_phi(L + i, factors[i])
+
+    # ---------- MITM ----------
+    result = []
+
+    for i in range(size):
+        x = L + i
+
+        target = sigma[i] * (psi[i]** 3) * phi[i] - x**5
+
+        if target <= 0:
+            continue
+
+        limit = int(target ** (1 / 5)) + 1
+
+        # LEFT: (y, z)
+        left = {}
+
+        for y in range(1, limit + 1):   # no zero components
+            y5 = y**5
+
+            for z in range(y, limit + 1):
+                s = y5 + z**5
+
+                if s > target:
+                    break
+
+                left.setdefault(s, []).append((y, z))
+
+        # RIGHT: (t, w)
+        for t in range(1, limit + 1):   # no zero components
+            t5 = t**5
+
+            for w in range(t, limit + 1):
+                s = t5 + w**5
+
+                if s > target:
+                    break
+
+                rem_val = target - s
+
+                if rem_val in left:
+                    for y, z in left[rem_val]:
+                        if y <= z <= t <= w:
+                            result.append((x, y, z, t, w))
+
+    return result
+
+
+# ---------- main ----------
+if __name__ == "__main__":
+
+    START = 1
+    END   = 300
+    BLOCK = 100
+    CORES = min(cpu_count(), 4)
+
+    print("Generating primes...")
+    primes = primes_up_to(int(math.isqrt(END)) + 1)
+
+    tasks = []
+    for L in range(START, END, BLOCK):
+        R = min(L + BLOCK, END)
+        tasks.append((L, R, primes))
+
+    print("Running...")
+
+    with Pool(CORES) as pool:
+        results = pool.map(process_block, tasks)
+
+    solutions = [p for block in results for p in block]
+
+    # OEIS sequence: first components x
+    oeis_seq = sorted(set(s[0] for s in solutions))
+
+    print("\nSolutions (x, y, z, t, w):")
+    for s in solutions:
+        print(s)
+
+    print("\nOEIS sequence (first components):")
+    print(", ".join(map(str, oeis_seq)))
+
+    print(f"\nTotal: {len(solutions)}")
