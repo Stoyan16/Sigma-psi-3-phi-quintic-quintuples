@@ -71,7 +71,7 @@ def process_block(args):
     for i in range(size):
         x = L + i
 
-        target = sigma[i] * (psi[i]** 3) * phi[i] - x**5
+        target = sigma[i] * (psi[i] ** 3) * phi[i] - x**5
 
         if target <= 0:
             continue
